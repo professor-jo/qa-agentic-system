@@ -1,0 +1,71 @@
+analyze_code_task:
+  description: >
+    Analyze the repository at {repo_path} (branch {branch}).
+
+    1. Use list_repo_files to learn the layout.
+    2. Read the README, the packaging/config files, and the main modules.
+    3. Work out how the code fits together and how its existing tests are run.
+  expected_output: >
+    A Markdown code analysis with these sections:
+    '## Overview' (purpose, language, frameworks);
+    '## Architecture' (main modules, what each one does, and how data flows between them);
+    '## Existing Tests' (where they live, what they cover, and what's missing);
+    '## Risky Areas' (complex, security-sensitive or under-tested code, with file paths).
+    Do not wrap the whole response in ``` fences.
+  agent: code_analyst
+
+find_issues_task:
+  description: >
+    Using the code analysis, review the code in {repo_path} for bugs and
+    optimization opportunities. Read the actual source; don't rely on the summary alone.
+
+    Look for: logic errors, unhandled edge cases, error handling, security
+    issues (injection, hard-coded secrets, unsafe deserialization, path
+    traversal, auth flaws), resource leaks, concurrency problems, and
+    performance problems (needless repeated work, N+1 queries, blocking calls
+    in async code, inefficient algorithms).
+  expected_output: >
+    A Markdown report with a '## Bugs' section and an '## Optimizations' section.
+    Order the bugs by severity (Critical, Major, Minor). For every item give
+    `path:line`, what's wrong, why it matters, and a concrete fix (with a short
+    code snippet where it helps). End with '## Summary', a count of the findings
+    by severity. Do not wrap the whole response in ``` fences.
+  agent: bug_hunter
+  context:
+    - analyze_code_task
+
+write_and_run_tests_task:
+  description: >
+    Write a pytest test suite for the repository at {repo_path}, run it, and
+    report on the results.
+
+    Rules:
+    - Create NEW test files under '{tests_dir}/' (paths are relative to the
+      repo root). You cannot modify existing files there.
+    - pytest runs from '{project_dir}' in a virtualenv where the project and its
+      dependencies are already installed, so import the package normally.
+    - Before you started, the existing tests gave: {baseline}.
+
+    What to test:
+    1. For every bug in the findings report that can be reproduced with a test,
+       write a test that asserts the correct behaviour. It should fail while the
+       bug exists.
+    2. Cover the core behaviour from the analysis: happy paths, edge cases,
+       invalid input and error handling. Mock network, time and other external
+       services.
+
+    Run the suite with run_tests. If a test is broken (a wrong import, a wrong
+    assumption about the API), fix the test and run it again. If a test fails
+    because the code is wrong, keep it and record it as a confirmed bug.
+  expected_output: >
+    A Markdown test report with these sections:
+    '## Result' (the exact pass/fail/error counts from the last run_tests call);
+    '## Test Files' (each new file and what it covers);
+    '## Confirmed Bugs' (each failing test that reproduces a real bug, linked to its finding);
+    '## Unconfirmed Findings' (findings that couldn't be reproduced with a test, and why);
+    and '## Coverage Gaps'.
+    Do not wrap the whole response in ``` fences.
+  agent: test_engineer
+  context:
+    - analyze_code_task
+    - find_issues_task
