@@ -1,4 +1,4 @@
-# Agentic QA
+# QA AI Agent System
 
 An AI QA team for your repositories: on GitHub, in local folders, or someone
 else's project you've cloned. It analyzes the code, fixes and optimizes it,
