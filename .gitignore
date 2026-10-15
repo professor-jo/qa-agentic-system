@@ -1,6 +1,12 @@
+# Secrets: API keys live only in your local .env, never in git
+.env
+.env.*
+!.env.example
+
+# Local environments and run data
 .venv/
 __pycache__/
 *.pyc
-.env
 output/
 workspace/
+.DS_Store

@@ -16,21 +16,45 @@ Supports **Python** (pytest) and **JavaScript/TypeScript** (vitest, with React
 Testing Library for UI code), including repos that have both, such as a Python
 backend with a React frontend.
 
+## Requirements
+
+| Tool | Needed for | Install (macOS) |
+|------|------------|-----------------|
+| **Python 3.11–3.13** | running the app | `brew install python@3.12` or [uv](https://docs.astral.sh/uv/) |
+| **Git** | everything | `xcode-select --install` |
+| **Node.js 18+** | testing JavaScript/TypeScript projects | `brew install node` |
+| **GitHub CLI** (optional) | listing your repos, opening PRs | `brew install gh`, then `gh auth login` |
+| **OpenAI API key** | the agents | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+
 ## Setup
 
 ```bash
-uv pip install --python .venv/bin/python -e .
-gh auth login                 # for listing your repos and opening PRs
+git clone https://github.com/professor-jo/qa-agentic-system.git
+cd qa-agentic-system
+
+# create a virtual environment (Python 3.11–3.13) and install
+python3.12 -m venv .venv            # or: uv venv --python 3.12
+source .venv/bin/activate
+pip install -e .                    # or: uv pip install -e .
 ```
 
-The agents use OpenAI. On the first run you're asked for your API key, and it
-can be saved to `.env` (see `.env.example`). Set `MODEL` there to change the
-model (default `gpt-6.1-sol`; `gpt-5-mini` is the budget option).
+### Your API key
+
+You bring your own OpenAI API key. Runs are billed to your OpenAI account, and
+each run shows its token usage and estimated cost at the end.
+
+- **Easiest:** just run `qa_team`. It asks for your key (input is hidden) and
+  offers to save it to a local `.env` file.
+- **Or by hand:** `cp .env.example .env` and paste your key into `.env`.
+
+`.env` is listed in `.gitignore`, so your key stays on your machine and is
+never committed. Set `MODEL` in `.env` to change the model (default
+`gpt-6.1-sol`; `gpt-5-mini` is the budget option).
 
 ## Run
 
 ```bash
-source .venv/bin/activate
+source .venv/bin/activate                     # once per terminal window
 qa_team                                       # asks for a repo; Enter lists your GitHub repos
 qa_team https://github.com/owner/repo         # any GitHub repo you can read
 qa_team ~/code/my-project --branch dev        # a local Git repo
@@ -131,3 +155,7 @@ src/qa_team/
   ui.py         live dashboard and decision prompts
   config/       agent roles and task prompts
 ```
+
+## License
+
+[MIT](LICENSE)
