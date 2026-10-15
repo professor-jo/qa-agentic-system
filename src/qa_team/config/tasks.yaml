@@ -1,71 +1,229 @@
-analyze_code_task:
-  description: >
-    Analyze the repository at {repo_path} (branch {branch}).
+analyze:
+  agent: analyst
+  description: |
+    Analyze the repository at {repo_path} (branch: {branch}).
 
-    1. Use list_repo_files to learn the layout.
-    2. Read the README, the packaging/config files, and the main modules.
-    3. Work out how the code fits together and how its existing tests are run.
-  expected_output: >
-    A Markdown code analysis with these sections:
-    '## Overview' (purpose, language, frameworks);
-    '## Architecture' (main modules, what each one does, and how data flows between them);
-    '## Existing Tests' (where they live, what they cover, and what's missing);
-    '## Risky Areas' (complex, security-sensitive or under-tested code, with file paths).
-    Do not wrap the whole response in ``` fences.
-  agent: code_analyst
+    Components that will be tested:
+    {components}
 
-find_issues_task:
-  description: >
-    Using the code analysis, review the code in {repo_path} for bugs and
-    optimization opportunities. Read the actual source; don't rely on the summary alone.
+    Read the whole project: use list_files on the repository, then read the README,
+    the config/packaging files, every entry point and the core modules. Use
+    search_code to trace how the pieces connect. Ignore the '{test_root}' and
+    '{report_root}' folders.
+  expected_output: |
+    A Markdown analysis with these sections:
+    ## Overview (what the project does, languages, frameworks)
+    ## Architecture (main modules and what each does, with file paths)
+    ## Code Quality Issues (suspected bugs, inefficiencies, bad practices, security risks; each with `path:line` and why it matters, most severe first)
+    ## Dated Patterns (old libraries, framework versions or UI patterns worth modernizing)
+    ## What to Test (the most important behaviour, per component)
 
-    Look for: logic errors, unhandled edge cases, error handling, security
-    issues (injection, hard-coded secrets, unsafe deserialization, path
-    traversal, auth flaws), resource leaks, concurrency problems, and
-    performance problems (needless repeated work, N+1 queries, blocking calls
-    in async code, inefficient algorithms).
-  expected_output: >
-    A Markdown report with a '## Bugs' section and an '## Optimizations' section.
-    Order the bugs by severity (Critical, Major, Minor). For every item give
-    `path:line`, what's wrong, why it matters, and a concrete fix (with a short
-    code snippet where it helps). End with '## Summary', a count of the findings
-    by severity. Do not wrap the whole response in ``` fences.
-  agent: bug_hunter
-  context:
-    - analyze_code_task
+optimize:
+  agent: optimizer
+  description: |
+    Improve the code in {repo_path} based on the Code Analyst's report below.
 
-write_and_run_tests_task:
-  description: >
-    Write a pytest test suite for the repository at {repo_path}, run it, and
-    report on the results.
+    Priority 1 (apply these): fix the bugs, mistakes and inefficiencies. Read
+    each file before you edit it. Use edit_file for surgical changes and
+    create_file only for genuinely new modules. Keep behaviour and public APIs
+    the same unless they are the bug (don't change settings such as timeouts or
+    limits just because you prefer other values; recommend that instead). Don't add or upgrade dependencies, don't
+    change lockfiles, and don't touch '{test_root}'. Re-verify each issue
+    against the actual code first, because the analysis can be wrong. Skip
+    anything you can't confirm.
+
+    Priority 2 (recommend, don't apply): better UI/UX design, and newer
+    frameworks or libraries that would keep the code modern.
+
+    --- Code Analyst's report ---
+    {analysis}
+  expected_output: |
+    Markdown with these sections:
+    ## Changes Applied (a table with columns: File | What changed | Why. List only edits you actually made.)
+    ## Issues Not Changed (analysis items you skipped, and why)
+    ## Recommendations
+    ### UI/UX
+    ### Frameworks & Libraries
+    Each recommendation is one or two lines: what to do, and the benefit.
+
+write_tests:
+  agent: tester
+  description: |
+    Create and run a test suite for {repo_path}.
+
+    Components and where their tests go:
+    {components}
 
     Rules:
-    - Create NEW test files under '{tests_dir}/' (paths are relative to the
-      repo root). You cannot modify existing files there.
-    - pytest runs from '{project_dir}' in a virtualenv where the project and its
-      dependencies are already installed, so import the package normally.
-    - Before you started, the existing tests gave: {baseline}.
+    - Every file you create goes inside '{test_root}/<component>/'. Organize tests
+      into relevant subfolders, for example 'unit/', 'integration/' and 'components/'
+      (for UI). Python test files are named test_*.py; JS/TS test files *.test.js,
+      *.test.jsx, *.test.ts or *.test.tsx.
+    - Python: pytest runs from the component's own folder with the project
+      installed, so import the project's modules normally (as its own code does).
+      A conftest.py inside the component's test folder is allowed.
+    - JS/TS: vitest (globals on; jsdom and @testing-library/react plus jest-dom
+      when the project uses React or another UI library). Import source files
+      with relative paths from the test file, for example
+      '../../../frontend/src/components/Button.jsx'. Mock network calls with vi.mock.
+    - Coverage: write tests for EVERY component listed above, not just one.
+      For each component, cover each item in the analysis's "What to Test"
+      section and every fix the Optimizer applied. For APIs, test the routes
+      (success, validation errors, auth failures). For UI code, render the main
+      pages and components and test their interactions. For utilities, test the
+      edge cases. Expect to write several test files per component.
+    - Run the tests with run_tests. If a test is broken (wrong import, wrong
+      assumption), fix the test. If a test fails because the code is wrong,
+      keep it. The code will be sent back for a fix.
 
-    What to test:
-    1. For every bug in the findings report that can be reproduced with a test,
-       write a test that asserts the correct behaviour. It should fail while the
-       bug exists.
-    2. Cover the core behaviour from the analysis: happy paths, edge cases,
-       invalid input and error handling. Mock network, time and other external
-       services.
+    --- Code Analyst's report ---
+    {analysis}
 
-    Run the suite with run_tests. If a test is broken (a wrong import, a wrong
-    assumption about the API), fix the test and run it again. If a test fails
-    because the code is wrong, keep it and record it as a confirmed bug.
-  expected_output: >
-    A Markdown test report with these sections:
-    '## Result' (the exact pass/fail/error counts from the last run_tests call);
-    '## Test Files' (each new file and what it covers);
-    '## Confirmed Bugs' (each failing test that reproduces a real bug, linked to its finding);
-    '## Unconfirmed Findings' (findings that couldn't be reproduced with a test, and why);
-    and '## Coverage Gaps'.
-    Do not wrap the whole response in ``` fences.
-  agent: test_engineer
-  context:
-    - analyze_code_task
-    - find_issues_task
+    --- Optimizer's changes ---
+    {optimization}
+  expected_output: |
+    A short Markdown summary: the test files you created (grouped by component
+    and folder, one line each saying what it covers), and the exact result of
+    your last run_tests call. List any failing tests that you believe are real
+    code bugs.
+
+diagnose:
+  agent: analyst
+  description: |
+    The test suite in {repo_path} is failing (round {round}). Find the root cause
+    of every failure.
+
+    For each failing test, read the test and the code under test, then decide:
+    - CODE BUG: the source code is wrong (including bugs the Optimizer introduced).
+    - TEST BUG: the test is wrong (bad import, wrong expectation about correct behaviour, bad mock).
+
+    Never propose a fix that reintroduces a bug or security weakness the
+    Optimizer removed (for example, putting back a hard-coded secret). If a
+    correct fix broke the project's own tests, find a fix that keeps both: a
+    lazy check at use time instead of import time, an explicit test/dev flag,
+    or a safer default.
+
+    --- Failing test output ---
+    {failures}
+
+    --- Changes the Optimizer has made so far ---
+    {changes}
+  expected_output: |
+    A Markdown list with one entry per failing test: the test id, CODE BUG or
+    TEST BUG, the root cause with `path:line`, and the exact fix to make.
+
+fix_code:
+  agent: optimizer
+  description: |
+    Tests in {repo_path} are failing (round {round}). Fix every item the Code
+    Analyst marked CODE BUG below, and re-optimize the affected code if your
+    earlier change caused it. Read each file before editing, and make surgical
+    edits only. Don't touch '{test_root}', dependencies or lockfiles. Ignore
+    TEST BUG items: the Test Engineer handles those. Never make tests pass by
+    reintroducing a bug or security weakness, such as a hard-coded secret.
+
+    --- Diagnosis ---
+    {diagnosis}
+  expected_output: |
+    A Markdown table of the edits you made (File | Change | Fixes which failure),
+    or "No code changes needed" if every item was a TEST BUG.
+
+write_missing_tests:
+  agent: tester
+  description: |
+    These components still have NO runnable tests in {repo_path}:
+    {missing}
+
+    Write a proper test suite for each of them now (inside
+    '{test_root}/<component>/', organized into subfolders such as unit/,
+    integration/ and components/), following the same rules as before: mock
+    network calls, import source with relative paths (JS) or normally (Python),
+    and cover the analysis's "What to Test" items for that component and the
+    Optimizer's fixes. Run them with run_tests (component=<name>), and fix any
+    broken tests.
+
+    --- Code Analyst's report ---
+    {analysis}
+
+    --- Optimizer's changes ---
+    {optimization}
+  expected_output: |
+    The test files you created (one line each), and the exact result of your
+    last run_tests call for each of those components.
+
+repair_tests:
+  agent: tester
+  description: |
+    Round {round}: fix every item the Code Analyst marked TEST BUG below (the
+    Optimizer has already fixed the CODE BUG items). Only edit files inside
+    '{test_root}/'. Never weaken an assertion about correct behaviour. Then
+    run all tests with run_tests and report the result.
+
+    --- Diagnosis ---
+    {diagnosis}
+  expected_output: |
+    What you changed in the tests (one line per file), and the exact result of
+    your final run_tests call.
+
+test_report:
+  agent: tester
+  description: |
+    All tests now pass. Write the test report for {repo_name}, dated {date}.
+    Keep it short and readable; no filler.
+
+    Facts to use (don't invent anything beyond these):
+    - Components and runners:
+    {components}
+    - Final results per component:
+    {final_results}
+    - Test files:
+    {test_files}
+    - Test rounds (failures that were sent back and fixed):
+    {rounds}
+    - What the tests were written to cover:
+    {tests_summary}
+  expected_output: |
+    Markdown, roughly a page at most:
+    # Test Report: {repo_name} ({date})
+    A one-line verdict.
+    ## Results (a table with columns Component | Runner | Passed | Notes)
+    ## What's Covered (grouped by folder, one line each)
+    ## Bugs Caught and Fixed (from the rounds, or "None, all tests passed first time")
+    Don't wrap the whole response in ``` fences, and don't end with offers or questions.
+
+qa_report:
+  agent: reporter
+  description: |
+    Write the comprehensive QA report for {repo_name} (branch {branch}), dated
+    {date}. It documents the whole process the QA team carried out. Be thorough
+    but readable: use tables and bullets, and skip filler.
+
+    --- Setup ---
+    {setup}
+
+    --- 1. Code analysis (Code Analyst) ---
+    {analysis}
+
+    --- 2. Optimization (Code Optimizer) ---
+    {optimization}
+
+    Source files changed (from the tool log): {changed_files}
+
+    --- 3. Testing (Test Engineer) ---
+    Final results: {final_results}
+    Rounds: {rounds}
+    Test report file: {test_report_path}
+
+    --- 4. Delivery ---
+    {delivery}
+  expected_output: |
+    Markdown:
+    # Comprehensive QA Report: {repo_name} ({date})
+    ## Summary (3 to 5 bullets: the verdict, the number of fixes, the test results, top recommendations)
+    ## Process (a short table: Step | Agent | Outcome)
+    ## 1. Code Analysis (key findings only)
+    ## 2. Fixes & Optimizations (a table: File | Change | Why)
+    ## 3. Recommendations (UI/UX, frameworks and libraries)
+    ## 4. Testing (results table, the rounds and what was fixed, and the test report path)
+    ## 5. Delivery & Next Steps
+    Don't wrap the whole response in ``` fences, and don't end with offers or questions.

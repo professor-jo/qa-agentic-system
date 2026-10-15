@@ -1,182 +1,124 @@
-# QA Team Workflow
+# Agentic QA Workflow
 
-This document describes what happens between entering a repository and
-getting the final **SUCCESS** / **FAIL** result. For setup and usage, see the
-[README](../README.md).
-
-The team does four things, and only these four:
-
-1. **Analyze** the code
-2. **Find** bugs and optimization opportunities
-3. **Write, run and report on** a test suite
-4. **Open a pull request** with the new tests, if you have write access to the repo
-
-## At a glance
+This document walks through what happens when you run `qa_team` on a
+repository. Usage is covered in the [README](../README.md).
 
 ```mermaid
 flowchart TD
-    A([qa_team]) --> B[Get the repo<br/>clone URL / use local path, check out branch]
-    B -- not found --> F1([FAIL])
-    B --> C[Install dependencies<br/>isolated virtualenv + baseline test run]
-    C -- not Python / install fails --> F2([FAIL])
-    C --> K[Check OpenAI access]
-    K -- bad key / model --> F3([FAIL])
-    K --> S1
-
-    subgraph crew [CrewAI sequential crew]
-        S1[1. Code Analyst<br/>ANALYSIS.md] --> S2[2. Bug & Performance Reviewer<br/>FINDINGS.md]
-        S2 --> S3[3. Test Engineer<br/>writes + runs tests, TEST_REPORT.md]
-    end
-
-    S3 --> V[Independent final pytest run]
-    V --> P{4. Write access<br/>to GitHub repo?}
-    P -- yes --> PR[Commit new tests to qa/tests-… branch,<br/>push, open PR]
-    P -- no --> SK[Skip PR, say why]
-    PR & SK --> R([SUCCESS if all tests pass, otherwise FAIL])
+    IN([GitHub URL · local folder · pick from your GitHub]) --> S[Setup]
+    S -- not accessible --> MSG([Message: not an accessible repository])
+    S --> A[1 · Code Analyst<br/>reads the whole project]
+    A --> O[2 · Optimizer<br/>fixes first, then recommendations]
+    O --> T[3 · Test Engineer<br/>writes tests in 'agentic test/', runs them]
+    T --> V{Independent test run:<br/>all pass?}
+    V -- no --> D[Code Analyst diagnoses<br/>CODE BUG / TEST BUG] --> F[Optimizer fixes code] --> R[Test Engineer repairs tests] --> V
+    V -- "no, after 3 rounds" --> ASK{{You choose: more rounds /<br/>skip test report / stop / discard}}
+    V -- yes --> TR[Test report<br/>agentic test/yyyy-mm-dd-test-report.md]
+    TR --> Q[4 · QA Reporter<br/>Agentic QA Report/Comprehensive QA report yyyy-mm-dd.md]
+    Q --> B[Commit on qa/agentic-… branch]
+    B --> P{Write access?}
+    P -- yes --> PR([Push + PR into the tested branch])
+    P -- no --> FK{{You choose: fork + PR upstream / keep local branch}}
 ```
 
-## What you see
+## Setup
 
-By default, the terminal shows only one line per stage and the result:
+1. **Get the repository.**
+   - GitHub URLs are cloned fresh into `workspace/<repo>`. If an earlier clone
+     holds QA branches that were never pushed, you're asked before it's replaced.
+   - Local folders are used in place. If one has uncommitted changes, you can
+     stash them for the run (they're restored at the end), continue, or cancel.
+   - Anything that isn't an accessible Git repository stops with a message
+     explaining why.
+2. **Detect components.** Every folder (up to 3 levels deep) that contains
+   `pyproject.toml`, `setup.py`, `setup.cfg` or `requirements.txt` is a Python
+   component, and every folder with a real `package.json` is a JS/TS component.
+   Each one gets its own test folder: `agentic test/<component>/`.
+3. **Install dependencies.**
+   - **Python:** a virtualenv in `workspace/.venvs/<repo>/<component>`, with
+     the project, its test/dev extras, its `requirements*.txt` and pytest. The
+     project's own tests run once to get a baseline.
+   - **JS/TS:**
+     - The project's dependencies are installed with `npm ci`, or
+       `npm install --no-save`. Neither changes the lockfile.
+     - A small harness is generated in `agentic test/<component>/`:
+       `package.json`, `vitest.config.mjs`, a setup file and `.gitignore`.
+     - vitest (plus jsdom and Testing Library for UI projects) is installed
+       there, and the project's own React is linked in so there's only one copy.
+   - If an install fails, you choose to skip that component, retry or stop.
+4. **Check the OpenAI key and model** with one tiny call. If it fails, you
+   choose to retry, enter a new key or stop.
 
-```
-[1/6] Getting https://github.com/owner/repo ... on branch main (2s)
-[2/6] Installing dependencies ... existing tests: 96 passed (21s)
-[3/6] Analyzing the code ... done (1m 05s)
-[4/6] Looking for bugs and optimizations ... done (1m 40s)
-[5/6] Writing and running tests ... done (3m 12s)
-[6/6] Creating a pull request ... created (6s)
+## The agents
 
-SUCCESS  https://github.com/owner/repo @ main
-  All tests pass.
-  Tests:    118 passed  (before: 96 passed; 2 new test file(s))
-  PR:       https://github.com/owner/repo/pull/12
-  Reports:  output/repo/
-```
+| Agent | Tools | Task | Output |
+|-------|-------|------|--------|
+| 1 · Code Analyst | list, read, search | Reads the whole project. Reports the overview, architecture, code quality issues (`path:line`), dated patterns and what to test. | analysis (passed on) |
+| 2 · Optimizer | list, read, search, **edit**, create | **Priority 1:** fixes bugs, mistakes and inefficiencies with surgical edits. **Priority 2:** recommends UI/UX and framework/library upgrades (not applied). | changes table + recommendations |
+| 3 · Test Engineer | list, read, search, **write test**, run tests | Writes tests in `agentic test/<component>/` (subfolders such as `unit/`, `integration/`, `components/`), covering the analysis and every fix, and runs them. | test files + summary |
+| 4 · QA Reporter | none | Writes the comprehensive report from the team's records. | `Comprehensive QA report yyyy-mm-dd.md` |
 
-The agents' detailed step-by-step output goes to `output/<repo>/run.log`. Run
-with `-v` / `--verbose` to see it live instead.
+### The failure loop
 
-## Preparation (before the agents)
+After the Test Engineer finishes, the program itself runs every component's
+tests. It also re-runs the project's own Python tests if they passed before,
+which catches regressions the Optimizer introduced.
 
-These steps are plain code (no LLM), so they're fast and cost nothing.
+If anything fails, the work goes back to the first two agents:
 
-### Getting the repo (`repo_source.py`)
+1. The **Code Analyst** diagnoses each failure as a *CODE BUG* or a *TEST BUG*,
+   giving the root cause and the fix.
+2. The **Optimizer** fixes the CODE BUGs.
+3. The **Test Engineer** repairs the TEST BUGs (it may never weaken a correct
+   assertion), and everything runs again.
 
-| Input | What happens |
-|-------|--------------|
-| `https://github.com/owner/repo` | Fresh clone into `workspace/repo`, then check out `--branch` if given |
-| `https://github.com/owner/repo/pull/42` | Clone, then fetch and check out the PR's code (no PR is created in step 4 for this input) |
-| `~/code/my-project` | Used in place, then check out `--branch` if given |
+After 3 rounds, you're asked: run more rounds, skip the test report and write
+the QA report anyway, stop and keep the changes, or discard everything.
 
-The checked-out branch is the one that gets analyzed, and it's also the branch
-a step-4 pull request targets.
+### Reports
 
-### Installing dependencies (`repo_env.py`)
+- **`agentic test/yyyy-mm-dd-test-report.md`** is written **only when every
+  test passes**. It's short: a verdict, a results table, what's covered, and
+  the bugs that were caught and fixed.
+- **`Agentic QA Report/Comprehensive QA report yyyy-mm-dd.md`** covers the
+  whole process: summary, process table, analysis, fixes, recommendations,
+  testing rounds and delivery. If the folder exists, only the file is added.
 
-1. Stop with FAIL if the repo has no Python code. Only Python/pytest repos are
-   supported.
-2. Find where the tests live: `testpaths` in `pyproject.toml`, otherwise an
-   existing `tests/` or `test/` folder, otherwise a new `tests/` folder. pytest
-   runs from the nearest project folder above it (for example `backend/`).
-3. Create a fresh virtualenv at `workspace/.venvs/<repo>` and install:
-   - the project, including its test/dev extras and dependency groups
-   - any `requirements*.txt` files
-   - pytest
-4. Run the existing tests once to get a **baseline** (for example
-   "96 passed"). The Test Engineer is told this result.
+If a report with the same name already exists (a second run the same day),
+` (2)` is appended to the new file's name.
 
-`qa_team <repo> --setup-only` stops here. It needs no API key.
+## Delivery
 
-## Steps 1–3: the crew (`crew.py`, `config/*.yaml`)
+1. **Commit** on a new branch `qa/agentic-YYYYMMDD-HHMMSS`. Only the agents'
+   work is committed: the changed source files, `agentic test/` (without
+   `node_modules`) and `Agentic QA Report/`.
+2. **Push and open a PR** into the tested branch, if the active `gh` account
+   has push access.
+3. **Without push access,** you choose to fork and open a PR upstream (useful
+   for helping other developers) or keep the branch locally.
+4. **Switch back** to the tested branch. With `--no-pr`, the work is only
+   committed locally.
 
-The three agents run one after another. Each task receives the earlier tasks'
-outputs as context.
+## Errors
 
-| Step | Agent | Tools | What it does | Report |
-|------|-------|-------|--------------|--------|
-| 1 | Code Analyst | list files, read file | Reads the layout, README, config and core modules. Describes the architecture, the existing tests and the risky areas. | `ANALYSIS.md` |
-| 2 | Bug & Performance Reviewer | list files, read file | Reviews the source for logic errors, edge cases, security holes, leaks, concurrency problems and slow code. Each finding gets `path:line`, severity and a concrete fix. | `FINDINGS.md` |
-| 3 | Test Engineer | list, read, write test file, run tests | Writes tests that reproduce the step-2 bugs and cover core behaviour, then runs them. It fixes *broken* tests but keeps tests that fail because of *real bugs*. Reports the results. | `TEST_REPORT.md` |
+Every error is written to `output/<repo>/<timestamp>/run.log`, together with the
+suggestions shown and the option you chose. Without a terminal (CI, piped input),
+the default option is used automatically and logged.
 
-`TEST_REPORT.md` has these sections: Result (exact counts), Test Files,
-Confirmed Bugs (failing tests that reproduce a finding), Unconfirmed Findings,
-and Coverage Gaps.
+| Situation | Options |
+|-----------|---------|
+| Old clone has unpushed QA work | move it aside · delete it |
+| Local repo has uncommitted changes | stash during the run · continue · cancel |
+| Dependency install fails | skip the component · retry · stop |
+| OpenAI key or model rejected | retry · enter a new key · stop |
+| An agent errors (rate limit, outage, …) | retry · stop and keep changes · stop and discard |
+| Tests still failing after N rounds | more rounds · skip the test report · stop · discard |
+| No push access | fork + PR · keep the branch locally |
 
-### What agents can and can't do
+## Limits
 
-- **Source code is never modified.** No agent has a tool that can edit it.
-- **New test files only.** The Test Engineer can create new files inside the
-  tests folder and rewrite files it created itself. It can't modify any
-  existing file there, including existing tests and `conftest.py`.
-- **Tests run in the repo's virtualenv,** from the detected project folder,
-  with a 300-second timeout.
-- **Paths are checked:** any path that resolves outside the repository is
-  rejected.
-
-## Verdict
-
-After the crew finishes, the program runs the test suite once more **itself**
-and decides the result from pytest's real exit code, never from what the LLM
-claims.
-
-| Situation | Result |
-|-----------|--------|
-| All tests (existing + new) pass | **SUCCESS** |
-| Some tests fail | **FAIL**: often the new tests reproduced real bugs; see `TEST_REPORT.md` |
-| No runnable tests | **FAIL** |
-| Repo not found, install failed, bad API key, crew crashed | **FAIL** with the specific error |
-
-## Step 4: pull request (`publish.py`)
-
-This step is plain code, not an agent, so pushing to GitHub never depends on a
-model's judgment.
-
-1. **Check write access.** The `origin` remote must be on GitHub, the `gh` CLI
-   must be logged in, and the logged-in account must have push permission
-   (`gh api repos/OWNER/REPO` → `permissions.push`). If any of these fail, the
-   step is skipped and the reason is printed, for example
-   `skipped: professor-jo has no write access to d3jo/Travel-Planner`.
-2. **Commit only the new test files** the Test Engineer created, on a new
-   branch `qa/tests-YYYYMMDD-HHMMSS`. Nothing else in the working tree is
-   committed.
-3. **Push** using your `gh` login.
-4. **Open a PR** into the branch that was tested:
-   - Title: "QA: add test suite", with "(failing tests reproduce bugs)" added
-     if any tests fail.
-   - Body: the test result, the list of new files, and the test and findings
-     reports (in collapsible sections).
-5. **Switch back** to the tested branch.
-
-A PR is still opened when tests fail, because failing tests that reproduce bugs
-are the useful part. Use `--no-pr` to skip this step entirely. Nothing is ever
-merged automatically.
-
-## Outputs
-
-| What | Where |
-|------|-------|
-| Code analysis | `output/<repo>/ANALYSIS.md` |
-| Bugs & optimizations | `output/<repo>/FINDINGS.md` |
-| Test report | `output/<repo>/TEST_REPORT.md` |
-| Full agent log | `output/<repo>/run.log` |
-| New test files | the detected tests folder in the checkout, and in the PR |
-| Pull request | printed in the result line `PR:` |
-| Exit code | `0` success, `1` failure, `130` cancelled |
-
-## Configuration
-
-| Setting | Where | Default |
-|---------|-------|---------|
-| `OPENAI_API_KEY` | `.env` | (required) |
-| `MODEL` | `.env` | `gpt-5-mini` |
-| `TEMPERATURE` | `.env` | unset (gpt-5 models only accept the default) |
-| GitHub account used for PRs | `gh auth switch` | the active `gh` account |
-| Agent prompts | `config/agents.yaml`, `config/tasks.yaml` | — |
-
-## Known limitations
-
-- Python/pytest repos only.
-- System-level dependencies (database servers, native libraries) aren't installed.
-- Remote repos are re-cloned on every run, so generated tests that weren't
-  pushed in a PR are lost on the next run (copy them out first).
+- Python and JavaScript/TypeScript only.
+- Tests that need real services (databases, external APIs) must mock them,
+  because nothing is started for them.
+- Only the project's own **Python** tests are re-run for regressions. JS
+  projects' own test scripts (for example Playwright end-to-end tests) are not run.

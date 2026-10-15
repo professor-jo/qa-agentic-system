@@ -1,12 +1,14 @@
 [project]
 name = "qa_team"
 version = "0.1.0"
-description = "A CrewAI QA team: test suite generation, PR review, and change reports for any Git repo"
+description = "Agentic QA: an AI team that analyzes, fixes, tests and reports on your Git repositories"
 requires-python = ">=3.10,<3.14"
 dependencies = [
     "crewai>=1.15",
     "python-dotenv>=1.0",
     "pytest>=8.0",
+    "rich>=13",
+    "pyyaml>=6",
 ]
 
 [project.scripts]
