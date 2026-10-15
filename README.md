@@ -1,160 +1,220 @@
 # Agentic QA
 
-An AI QA team for your repositories: on GitHub, in local folders, or someone
-else's project you've cloned. It analyzes the code, fixes and optimizes it,
-writes and runs a test suite, and documents everything. The work is delivered
-on its own branch with a pull request.
+**An AI QA team that checks your code, fixes it, tests it, and writes up what it did.**
 
-| # | Agent | What it does |
-|---|-------|--------------|
-| 1 | **Code Analyst** | Reads the whole project and reports its architecture, issues and what to test |
-| 2 | **Optimizer** | **Fixes** bugs and inefficiencies first, then recommends UI/UX and framework/library improvements |
-| 3 | **Test Engineer** | Writes tests in `agentic test/` and runs them. If any fail, they go **back to agents 1 and 2** to fix, until all pass. Then it writes `agentic test/yyyy-mm-dd-test-report.md` |
-| 4 | **QA Reporter** | Writes `Agentic QA Report/Comprehensive QA report yyyy-mm-dd.md`, covering the whole process |
+Point it at a GitHub repository or a folder on your computer. Four AI agents
+read the code, fix the bugs they find, write and run tests, and write a report.
+Everything they change is put on a separate branch with a pull request, so you
+can review it before anything reaches your main branch.
 
-Supports **Python** (pytest) and **JavaScript/TypeScript** (vitest, with React
-Testing Library for UI code), including repos that have both, such as a Python
-backend with a React frontend.
+It works with **Python** and **JavaScript / TypeScript** projects, including
+React apps, and with projects that have both, such as a Python backend and a
+React frontend.
 
-## Requirements
+---
 
-| Tool | Needed for | Install (macOS) |
-|------|------------|-----------------|
-| **Python 3.11–3.13** | running the app | `brew install python@3.12` or [uv](https://docs.astral.sh/uv/) |
-| **Git** | everything | `xcode-select --install` |
-| **Node.js 18+** | testing JavaScript/TypeScript projects | `brew install node` |
-| **GitHub CLI** (optional) | listing your repos, opening PRs | `brew install gh`, then `gh auth login` |
-| **OpenAI API key** | the agents | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+## How it works
 
-## Setup
+```mermaid
+flowchart LR
+    A["📂 Your repo"] --> B["🔍 1. Code Analyst<br/>reads the code"]
+    B --> C["🛠️ 2. Optimizer<br/>fixes bugs"]
+    C --> D["🧪 3. Test Engineer<br/>writes & runs tests"]
+    D -- "tests fail" --> B
+    D -- "all pass" --> E["📝 4. QA Reporter<br/>writes the report"]
+    E --> F["🔀 Pull request"]
+```
+
+| Step | Agent | What it does |
+|:----:|-------|--------------|
+| 1 | 🔍 **Code Analyst** | Reads the whole project and lists the problems it finds |
+| 2 | 🛠️ **Optimizer** | Fixes those bugs and inefficiencies, then suggests modern UI ideas and libraries (suggestions only, not applied) |
+| 3 | 🧪 **Test Engineer** | Writes tests and runs them. If any fail, the failures go back to steps 1 and 2 to be fixed, and the tests run again until they all pass |
+| 4 | 📝 **QA Reporter** | Writes a report of everything that was found, fixed and tested |
+
+Finally, everything is committed to a new branch, and a **pull request** is
+opened for you to review.
+
+---
+
+## What it looks like
+
+While it runs, a live dashboard shows each agent and what it's doing right now:
+
+```
+╭─ Agentic QA · https://github.com/you/my-app @ main ────────────────────────────╮
+│ ✓  Setup              backend (python), frontend (js) · 1m 22s                  │
+│ ✓  1 · Code Analyst   2m 17s                                                    │
+│ ◰  2 · Optimizer      [=== ]  editing backend/app/routes/auth.py · 41s          │
+│ ·  3 · Test Engineer                                                            │
+│ ·  4 · QA Reporter                                                              │
+│ ·  Branch & PR                                                                  │
+│ activity ────────────────────────────────────────────────────────────────────── │
+│ 14:02:11  Code Analyst   reading backend/app/services/llm.py                    │
+│ 14:02:40  Optimizer      editing backend/app/routes/auth.py                     │
+╰─────────────────────────────────────────────────────────────────────────────────╯
+```
+
+When it finishes, you get the result and a plain list of everything that changed:
+
+```
+SUCCESS  All tests pass and the work is on its own branch.
+  PR      https://github.com/you/my-app/pull/1
+  Usage   2.0M in (1.5M cached) / 150k out · ≈ $2.65 (gpt-6.1-sol)
+
+╭─ What changed · on branch qa/agentic-20261015-191217 ─────────────────────────╮
+│ Code fixed (2 files)                                                           │
+│   ✎ backend/app/routes/auth.py   +14 −2   Replaced hard-coded JWT secret      │
+│   ✎ backend/app/services/llm.py  +10 −4   Made parsing of model output safer  │
+│ Tests added (3 files)  backend: 6 passed; frontend: 2 passed                   │
+│   + agentic test/backend/unit/test_llm_parse.py                                │
+│   + agentic test/backend/unit/test_trip_prefs.py                               │
+│   + agentic test/frontend/unit/test_api_fallback.test.js                       │
+│ Reports added                                                                  │
+│   + Agentic QA Report/Comprehensive QA report 2026-10-15.md                    │
+│   + agentic test/2026-10-15-test-report.md                                     │
+╰────────────────────────────────────────────────────────────────────────────────╯
+```
+
+If something goes wrong (for example, an install fails or tests keep failing),
+it explains the problem and lets you choose what to do next:
+
+```
+╭─ Needs your decision ───────────────────────────────────────────╮
+│ Tests still fail after 3 fix round(s): backend (2 failed)       │
+│   1) Run 3 more fix rounds (default)                            │
+│   2) Skip the test report and write the QA report anyway        │
+│   3) Stop here and keep the changes                             │
+│   4) Stop and discard all changes                               │
+╰─────────────────────────────────────────────────────────────────╯
+```
+
+---
+
+## Quick start
+
+**1. Install** (you need Python 3.11–3.13, Git, and Node.js for JavaScript projects)
 
 ```bash
 git clone https://github.com/professor-jo/qa-agentic-system.git
 cd qa-agentic-system
-
-# create a virtual environment (Python 3.11–3.13) and install
-python3.12 -m venv .venv            # or: uv venv --python 3.12
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -e .                    # or: uv pip install -e .
+pip install -e .
 ```
 
-### Your API key
-
-You bring your own OpenAI API key. Runs are billed to your OpenAI account, and
-each run shows its token usage and estimated cost at the end.
-
-- **Easiest:** just run `qa_team`. It asks for your key (input is hidden) and
-  offers to save it to a local `.env` file.
-- **Or by hand:** `cp .env.example .env` and paste your key into `.env`.
-
-`.env` is listed in `.gitignore`, so your key stays on your machine and is
-never committed. Set `MODEL` in `.env` to change the model (default
-`gpt-6.1-sol`; `gpt-5-mini` is the budget option).
-
-## Run
+**2. Run it**
 
 ```bash
-source .venv/bin/activate                     # once per terminal window
-qa_team                                       # asks for a repo; Enter lists your GitHub repos
-qa_team https://github.com/owner/repo         # any GitHub repo you can read
-qa_team ~/code/my-project --branch dev        # a local Git repo
-qa_team --mine                                # pick several of your GitHub repos (e.g. 1,3-5 or all)
+qa_team
 ```
 
-| Flag | Meaning |
-|------|---------|
-| `--branch NAME` | Branch to QA (default: the current/default branch) |
-| `--no-pr` | Commit to a local branch only; never push |
-| `-v`, `--verbose` | Show the agents' raw output instead of the dashboard |
+**3. Paste your OpenAI API key when asked.** You only do this once; it can be
+saved for next time. Get a key at
+[platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 
-### What you see
-
-One live dashboard per repository shows each agent's status, what it's doing
-right now, and a short activity feed:
+**4. Tell it which project to check.** Type a folder path or a GitHub URL, or
+press Enter to pick from your GitHub repositories:
 
 ```
-╭─ Agentic QA · https://github.com/owner/repo @ main ───────────────────────╮
-│ ✓ Setup             backend (python), frontend (js) · 1m 12s              │
-│ ✓ 1 · Code Analyst  1m 40s                                                │
-│ ⠋ 2 · Optimizer     editing backend/app/services/llm.py · 52s             │
-│ · 3 · Test Engineer                                                       │
-│ · 4 · QA Reporter                                                         │
-│ · Branch & PR                                                             │
-│ ── activity ───────────────────────────────────────────────────────────── │
-│ 14:02:11  Optimizer: reading backend/app/services/llm.py                  │
-│ 14:02:19  Optimizer: editing backend/app/services/llm.py                  │
-╰───────────────────────────────────────────────────────────────────────────╯
+Which repository should the team work on? Enter one of:
+  • a local folder path   e.g. ~/projects/my-app
+  • a GitHub URL          e.g. https://github.com/owner/repo
+  • nothing (just press Enter) to pick from your GitHub repositories
+
+Folder path or GitHub URL: ~/projects/my-app
 ```
 
-When something goes wrong (an install fails, the API errors, tests keep
-failing, you have no push access), it logs the error, suggests fixes, and asks
-you to pick an option, for example:
+A run usually takes **10 to 15 minutes** per project.
+
+---
+
+## More ways to run it
+
+```bash
+qa_team https://github.com/owner/repo         # a GitHub project
+qa_team ~/projects/my-app                     # a project on your computer
+qa_team ~/projects/my-app --branch dev        # check a specific branch
+qa_team --mine                                # pick several of your GitHub repos
+qa_team ~/projects/my-app --no-pr             # keep everything local, don't push
+```
+
+| Option | What it does |
+|--------|--------------|
+| `--branch NAME` | Check this branch instead of the current one |
+| `--mine` | List your GitHub repos and pick some (`1,3` or `all`) |
+| `--no-pr` | Commit to a local branch only, without pushing or opening a pull request |
+| `-v` | Show the agents' full output instead of the dashboard |
+
+---
+
+## What you get
+
+Everything goes on a new branch called `qa/agentic-<date>`:
 
 ```
-╭─ Needs your decision ─────────────────────────────────────────────────────╮
-│ Tests still fail after 3 fix round(s): backend (2 failed, 40 passed)       │
-│   1) Run 3 more fix rounds (default)                                       │
-│   2) Skip the test report and write the QA report anyway                   │
-│   3) Stop here and keep the changes (no reports, no PR)                    │
-│   4) Stop and discard all changes                                          │
-╰───────────────────────────────────────────────────────────────────────────╯
-```
-
-## What ends up in the repository
-
-On a new branch `qa/agentic-YYYYMMDD-HHMMSS`:
-
-```
-<repo>/
-├── …source files fixed by the Optimizer
+your-project/
+├── (the files the Optimizer fixed)
 ├── agentic test/
-│   ├── backend/   unit/ integration/ …       ← tests per component
-│   ├── frontend/  components/ unit/ …  (+ vitest config)
-│   └── 2026-10-15-test-report.md             ← only written when all tests pass
+│   ├── backend/  …                      ← the new tests
+│   ├── frontend/ …
+│   └── 2026-10-15-test-report.md        ← short test report
 └── Agentic QA Report/
-    └── Comprehensive QA report 2026-10-15.md
+    └── Comprehensive QA report 2026-10-15.md   ← the full report
 ```
 
-- **With write access:** the branch is pushed and a PR is opened into the
-  branch that was tested.
-- **Without write access** (someone else's repo): you choose between forking
-  and opening a PR upstream, or keeping the branch locally.
-- **Your branch is never modified directly.** After the run, the checkout
-  returns to the branch you tested.
+- **Your own repo:** a pull request is opened automatically.
+- **Someone else's repo:** you can fork it and open a pull request to the
+  original project, or just keep the branch locally.
+- **Your main branch is never changed.** You review the pull request and
+  decide whether to merge it.
 
-## Safety
+---
 
-- **Edit permissions are per agent.** The Optimizer can edit source but not
-  tests, lockfiles, `.env*` or dependencies. The Test Engineer can only write
-  inside `agentic test/`.
-- **Nothing in the project's setup is touched.** Test tooling (vitest etc.) is
-  installed inside `agentic test/<component>/node_modules` (git-ignored), and
-  Python virtualenvs live outside the repo in `workspace/.venvs/`. The
-  project's `package.json`, lockfiles and requirements stay as they are.
-- **Uncommitted work in a local repo** can be stashed during the run and
-  restored afterwards.
-- **"Discard" restores every file the agents touched** to its exact original
-  contents.
-- **Logs:** every run writes a full log to `output/<repo>/<timestamp>/run.log`.
-- **Generated tests execute the repo's code** on your machine, so only run
-  this on code you trust.
+## Is it safe?
 
-See [docs/WORKFLOW.md](docs/WORKFLOW.md) for the detailed flow.
+- 🔑 **Your API key stays on your computer**, in a `.env` file that is never
+  committed.
+- 🌿 **Nothing touches your main branch.** All changes go on a separate branch
+  for you to review.
+- 🛡️ **Each agent can only do its own job.** The Optimizer can edit source
+  code but not tests or dependencies. The Test Engineer can only write inside
+  `agentic test/`.
+- ↩️ **You can undo everything.** If you stop a run and choose "discard", every
+  file is restored exactly as it was.
+- ⚠️ **The tests run the project's code on your machine,** so only use it on
+  code you trust.
 
-## Layout
+---
 
-```
-src/qa_team/
-  main.py       CLI, repo selection, setup, per-repo dashboard
-  source.py     GitHub URL / local path / your-repos picker → checkout
-  stack.py      detect Python & JS parts, install deps, build the `agentic test/` harness, run tests
-  agents.py     builds and runs the CrewAI agents from config/*.yaml
-  pipeline.py   analyze → optimize → test → (fail → diagnose → fix → retest) → reports
-  tools.py      the agents' tools and their permissions
-  delivery.py   branch, commit, push, PR (or fork + PR)
-  ui.py         live dashboard and decision prompts
-  config/       agent roles and task prompts
-```
+## How much does it cost?
+
+You use your own OpenAI API key, so runs are billed to your OpenAI account.
+**Every run shows its exact token usage and estimated cost at the end.**
+
+The default model is `gpt-6.1-sol` (good quality, fast). To spend less, set
+`MODEL=gpt-5-mini` in your `.env` file. It's roughly 5–8× cheaper per token,
+but slower and less thorough.
+
+---
+
+## Requirements
+
+| You need | Why | Install on a Mac |
+|----------|-----|------------------|
+| Python 3.11–3.13 | runs the app | `brew install python@3.12` |
+| Git | everything | `xcode-select --install` |
+| Node.js 18+ | testing JavaScript/TypeScript projects | `brew install node` |
+| GitHub CLI *(optional)* | listing your repos and opening pull requests | `brew install gh`, then `gh auth login` |
+| OpenAI API key | powers the agents | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+
+---
+
+## Learn more
+
+- [docs/WORKFLOW.md](docs/WORKFLOW.md): the detailed step-by-step flow, error
+  handling and limits
+- Every run saves a full log to `output/<project>/<date>/run.log`
 
 ## License
 

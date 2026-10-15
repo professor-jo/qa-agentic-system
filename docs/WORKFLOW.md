@@ -122,3 +122,19 @@ the default option is used automatically and logged.
   because nothing is started for them.
 - Only the project's own **Python** tests are re-run for regressions. JS
   projects' own test scripts (for example Playwright end-to-end tests) are not run.
+
+## Code layout
+
+```
+src/qa_team/
+  main.py       CLI, repo selection, setup, per-repo dashboard
+  source.py     GitHub URL / local path / your-repos picker → checkout
+  stack.py      detect Python & JS parts, install deps, build the `agentic test/` harness, run tests
+  agents.py     builds and runs the CrewAI agents from config/*.yaml; model + cost estimate
+  pipeline.py   analyze → optimize → test → (fail → diagnose → fix → retest) → reports
+  tools.py      the agents' tools and their permissions
+  delivery.py   branch, commit, push, PR (or fork + PR)
+  summary.py    the "What changed" summary
+  ui.py         live dashboard and decision prompts
+  config/       agent roles and task prompts
+```
