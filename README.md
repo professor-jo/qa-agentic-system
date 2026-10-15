@@ -1,4 +1,4 @@
-# Agentic QA
+# QA AI Agent System
 
 **An AI QA team that checks your code, fixes it, tests it, and writes up what it did.**
 
