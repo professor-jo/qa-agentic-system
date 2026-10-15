@@ -32,7 +32,7 @@ API key. **Every branch of a public repo is public too**, `dev` included.
 - [ ] `git log -p main..dev | grep -E 'sk-[A-Za-z0-9_-]{20,}'` finds nothing,
       and no `.env` file is tracked (`git ls-files | grep -E '(^|/)\.env$'` is empty).
 - [ ] No personal paths, usernames or test data from the owner's machine are in
-      tracked files (`git ls-files | xargs grep -n '/Users/'`).
+      tracked files (`git ls-files ':!CLAUDE.md' | xargs grep -n '/Users/'` finds nothing).
 - [ ] `python -m pyflakes src` is clean.
 - [ ] A fresh clone installs and runs with **no key present**:
       `git clone <repo> /tmp/x && cd /tmp/x && python3.12 -m venv .venv && . .venv/bin/activate && pip install -e . && qa_team --help`
