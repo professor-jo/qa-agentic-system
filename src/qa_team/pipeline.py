@@ -216,6 +216,10 @@ def _error_suggestions(error: Exception) -> list[str]:
         return ["Your OpenAI account is out of credit. Add billing at platform.openai.com, then retry."]
     if "timeout" in text or "connection" in text:
         return ["A network problem reached OpenAI. Check your connection and retry."]
+    if "400" in text or "unsupported" in text or "invalid_request" in text:
+        return ["This is a configuration error, so retrying will fail the same way.",
+                "Choose 'Stop', then try another model: set MODEL in .env (for example MODEL=gpt-5-mini).",
+                "If it mentions reasoning_effort, remove or change REASONING_EFFORT in .env."]
     if "context" in text and "length" in text:
         return ["The repository is too large for one prompt. Retry, or test a smaller folder/sub-project."]
     return ["Retrying often works for temporary API errors.", "The full error is in the run log."]

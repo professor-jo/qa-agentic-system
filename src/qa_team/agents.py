@@ -47,10 +47,15 @@ def _config(name: str) -> dict:
 
 
 def build_llm() -> LLM:
+    # The Responses API: on Chat Completions, newer models (e.g. gpt-6.1-sol) reject
+    # tool calls combined with reasoning, and CrewAI's fallback (reasoning_effort="none")
+    # is rejected too. Responses supports both.
+    kwargs: dict = {"api": "responses"}
     # gpt-5* / o-series reject any temperature but the default; only send one if set.
-    kwargs = {}
     if temperature := os.getenv("TEMPERATURE"):
         kwargs["temperature"] = float(temperature)
+    if effort := os.getenv("REASONING_EFFORT"):  # low | medium | high | xhigh; unset = model default
+        kwargs["reasoning_effort"] = effort
     return LLM(model=model_name(), **kwargs)
 
 
@@ -71,11 +76,23 @@ def usage_summary(usage: dict[str, int]) -> str:
 
 
 def check_llm() -> str | None:
-    """One tiny call, so a bad key or model fails fast with a clear message."""
+    """A tiny agent run with one tool call, so a bad key, an unknown model, or a model
+    that can't use tools fails fast with a clear message (the agents rely on tools)."""
+    from crewai.tools import tool
+
+    @tool("add_numbers")
+    def add_numbers(a: int, b: int) -> str:
+        """Add two integers."""
+        return str(a + b)
+
     llm = build_llm()
     try:
         with open(os.devnull, "w") as devnull, contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
-            llm.call("Reply with the single word OK.")
+            agent = Agent(role="Checker", goal="Use the tool", backstory="You always use your tools.",
+                          tools=[add_numbers], llm=llm, max_iter=3, verbose=False)
+            task = Task(description="Use add_numbers to add 2 and 3, then reply with just the result.",
+                        expected_output="a number", agent=agent)
+            Crew(agents=[agent], tasks=[task], verbose=False).kickoff()
     except Exception as e:
         return f"{llm.model}: {type(e).__name__}: {str(e)[:300]}"
     return None
