@@ -15,7 +15,7 @@ from crewai import LLM, Agent, Crew, Process, Task
 from qa_team.tools import Session, optimizer_tools, read_tools, tester_tools
 
 CONFIG = Path(__file__).parent / "config"
-DEFAULT_MODEL = "gpt-6.1-sol"
+DEFAULT_MODEL = "gpt-5.4-mini"
 # USD per 1M tokens (input, cached input, output), Standard tier, from
 # developers.openai.com/api/docs/pricing (checked 2026-10-15). Used only for the cost estimate.
 PRICES = {

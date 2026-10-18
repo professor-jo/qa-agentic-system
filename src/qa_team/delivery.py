@@ -14,7 +14,6 @@ from pathlib import Path
 
 from qa_team.source import git
 from qa_team.stack import REPORT_ROOT, TEST_ROOT
-from qa_team.ui import Dashboard, choose
 
 # Push with the gh CLI's login so HTTPS clones need no separate git credentials.
 GH_CREDENTIALS = ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"]
@@ -85,7 +84,7 @@ def _fork_and_pr(repo: Path, slug: str, base: str, branch: str, title: str, body
 
 
 def deliver(repo: Path, slug: str | None, base: str, branch: str, changed: list[str], passed: bool,
-            summary: str, body: str, dashboard: Dashboard, log, open_pr: bool = True) -> Delivery:
+            summary: str, body: str, dashboard, log, open_pr: bool = True) -> Delivery:
     title = f"Agentic QA: fixes, tests and report ({summary})"
     message = f"Agentic QA: fixes, tests and report\n\n{summary}"
     try:
@@ -107,13 +106,12 @@ def deliver(repo: Path, slug: str | None, base: str, branch: str, changed: list[
             url, error = _create_pr(repo, slug, base, branch, title, body)
             return Delivery(branch, True, url, note="" if url else f"pushed, but creating the PR failed: {error}")
 
-        choice = choose(
+        choice = dashboard.decide(
             f"Can't open a PR directly: {reason}.",
             [("fork", f"Fork {slug} to your account and open a PR to the original repo"),
              ("local", "Keep the branch locally only")],
             default="local",
             suggestions=["If this is your repo under another account, run `gh auth switch` and re-run."],
-            dashboard=dashboard, log=log,
         )
         if choice == "fork":
             dashboard.activity("Delivery", "forking and opening a PR")

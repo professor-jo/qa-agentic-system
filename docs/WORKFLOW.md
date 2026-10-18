@@ -123,11 +123,37 @@ the default option is used automatically and logged.
 - Only the project's own **Python** tests are re-run for regressions. JS
   projects' own test scripts (for example Playwright end-to-end tests) are not run.
 
+## Web UI
+
+`qa_team ui` starts a local FastAPI server (`web.py`) and opens the page in
+`webui/index.html`. It drives the same `runner.run_repo` as the terminal; the
+only difference is the UI object passed in:
+
+| | Terminal (`ui.Dashboard`) | Web (`web.WebRun`) |
+|---|---|---|
+| Progress | live Rich panel | events streamed to the browser (Server-Sent Events) |
+| Decisions | numbered prompt in the terminal | buttons in a dialog; the run waits for the click |
+| "What changed" | printed after the run | shown on the page, with a diff per file |
+
+Safety:
+- **Your computer only:** the server listens on `127.0.0.1`.
+- **A secret token on every API call:** it's generated at startup and embedded
+  in the page, so other websites can't drive the server.
+- **Host header check:** only `localhost`/`127.0.0.1` are accepted, which
+  blocks DNS-rebinding attacks.
+- **Your API key never reaches the browser:** settings show only its last 4
+  characters, and it's saved to the local `.env`.
+- **Reports are sanitized:** they're rendered as Markdown and cleaned with
+  DOMPurify. All other text is inserted as plain text, never as HTML.
+- **One run at a time.** Each run is saved to `output/<repo>/<time>/result.json`,
+  which is what the history list shows.
+
 ## Code layout
 
 ```
 src/qa_team/
-  main.py       CLI, repo selection, setup, per-repo dashboard
+  main.py       CLI entry point (`qa_team`, `qa_team ui`), repo selection, API-key prompt
+  runner.py     runs one repo end to end with any UI (terminal or web); run history
   source.py     GitHub URL / local path / your-repos picker → checkout
   stack.py      detect Python & JS parts, install deps, build the `agentic test/` harness, run tests
   agents.py     builds and runs the CrewAI agents from config/*.yaml; model + cost estimate
@@ -135,6 +161,8 @@ src/qa_team/
   tools.py      the agents' tools and their permissions
   delivery.py   branch, commit, push, PR (or fork + PR)
   summary.py    the "What changed" summary
-  ui.py         live dashboard and decision prompts
+  ui.py         terminal dashboard and decision prompts
+  web.py        local web server (FastAPI): API, live events, decisions
+  webui/        the browser page (index.html)
   config/       agent roles and task prompts
 ```

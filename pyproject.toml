@@ -11,6 +11,8 @@ dependencies = [
     "pytest>=8.0",
     "rich>=13",
     "pyyaml>=6",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
 ]
 
 [project.scripts]

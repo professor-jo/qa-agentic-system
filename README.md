@@ -60,7 +60,7 @@ When it finishes, you get the result and a plain list of everything that changed
 ```
 SUCCESS  All tests pass and the work is on its own branch.
   PR      https://github.com/you/my-app/pull/1
-  Usage   2.0M in (1.5M cached) / 150k out · ≈ $2.65 (gpt-6.1-sol)
+  Usage   2.0M in (1.5M cached) / 150k out · ≈ $1.16 (gpt-5.4-mini)
 
 ╭─ What changed · on branch qa/agentic-20261015-191217 ─────────────────────────╮
 │ Code fixed (2 files)                                                           │
@@ -129,6 +129,29 @@ A run usually takes **10 to 15 minutes** per project.
 
 ---
 
+## Prefer a browser? Use the web app
+
+```bash
+qa_team ui
+```
+
+This opens the app in your browser. It runs only on your computer at
+`http://127.0.0.1:8765`; nothing is hosted online. From there you can:
+
+- **pick a project:** paste a GitHub link or drop a project folder onto the
+  page. If a link or folder can't be used, a short message explains why
+- **watch the run live:** each agent has its own animation, next to a live
+  activity feed
+- **answer questions with buttons** when the app needs a decision
+- **review the result:** expand each changed file to see its diff, read the
+  reports, and open the pull request
+- **see past runs** and change **settings** (API key, model, speed)
+
+Options: `qa_team ui --port 9000` uses a different port, and `--no-browser`
+starts the server without opening a browser tab.
+
+---
+
 ## More ways to run it
 
 ```bash
@@ -192,9 +215,14 @@ your-project/
 You use your own OpenAI API key, so runs are billed to your OpenAI account.
 **Every run shows its exact token usage and estimated cost at the end.**
 
-The default model is `gpt-6.1-sol` (good quality, fast). To spend less, set
-`MODEL=gpt-5-mini` in your `.env` file. It's roughly 5–8× cheaper per token,
-but slower and less thorough.
+The default model is `gpt-5.4-mini`: fast and affordable. You can change it in
+Settings (web app) or with `MODEL=` in your `.env` file:
+
+| Model | Speed | Cost | Good for |
+|-------|-------|------|----------|
+| `gpt-5.4-mini` (default) | fastest | low | everyday runs |
+| `gpt-6-luna` | fast | lowest | big repos on a budget |
+| `gpt-6.1-sol` | slower | ~2–3× more | the most thorough fixes |
 
 ---
 

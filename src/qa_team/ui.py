@@ -150,6 +150,22 @@ class Dashboard:
     def finish(self, success: bool, message: str, details: list[tuple[str, str]] | None = None) -> None:
         self.result = Result(success, message, details or [])
 
+    # --- the UI interface shared with the web UI (see web.py: WebRun) ------------
+    @property
+    def interactive(self) -> bool:
+        return interactive()
+
+    def decide(self, problem: str, options: list[tuple[str, str]], default: str,
+               suggestions: list[str] | None = None) -> str:
+        return choose(problem, options, default, suggestions, dashboard=self, log=self.log)
+
+    def ask_secret(self, prompt: str) -> str:
+        with self.paused():
+            return ask(prompt, secret=True)
+
+    def changes(self, data: dict) -> None:
+        """The web UI shows the 'What changed' data live; the CLI prints it after the box closes."""
+
     # --- rendering ------------------------------------------------------
     def _animation(self, stage: Stage) -> tuple[Spinner, Spinner]:
         if stage.key not in self._spinners:

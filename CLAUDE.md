@@ -41,6 +41,7 @@ API key. **Every branch of a public repo is public too**, `dev` included.
 
 ## Project notes
 
-- Entry point: `qa_team` (`src/qa_team/main.py`). The pipeline is described in `docs/WORKFLOW.md`.
+- Entry points: `qa_team` (CLI, `src/qa_team/main.py`) and `qa_team ui` (local web app, `src/qa_team/web.py`
+  + `src/qa_team/webui/index.html`). Both call `runner.run_repo`. The pipeline is described in `docs/WORKFLOW.md`.
 - The model is set by `MODEL` in `.env` (default in `src/qa_team/agents.py`).
 - `workspace/` (cloned repos) and `output/` (run logs) are local only and git-ignored.

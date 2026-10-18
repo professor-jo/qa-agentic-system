@@ -13,7 +13,7 @@ from pathlib import Path
 from qa_team.agents import run_task
 from qa_team.stack import REPORT_ROOT, TEST_ROOT, Component, TestRun, run_component_tests, run_pytest
 from qa_team.tools import Session
-from qa_team.ui import Dashboard, choose, interactive
+
 
 ROUNDS_PER_BATCH = 3
 MAX_FAILURE_CHARS = 12_000
@@ -49,7 +49,7 @@ def unique_path(path: Path) -> Path:
 
 class Pipeline:
     def __init__(self, repo: Path, branch: str, components: list[Component], session: Session,
-                 dashboard: Dashboard, log, verbose: bool, setup_summary: str, delivery_plan: str):
+                 dashboard, log, verbose: bool, setup_summary: str, delivery_plan: str):
         self.repo, self.branch, self.components = repo, branch, components
         self.session, self.dash, self.log, self.verbose = session, dashboard, log, verbose
         self.setup_summary, self.delivery_plan = setup_summary, delivery_plan
@@ -73,14 +73,13 @@ class Pipeline:
                 return result
             except Exception as e:  # noqa: BLE001 - anything the LLM/tools raise
                 self.dash.fail(stage, "error")
-                choice = choose(
+                choice = self.dash.decide(
                     f"The {self.session.agent} hit an error: {type(e).__name__}: {str(e)[:300]}",
                     [("retry", "Retry this step"),
                      ("stop", "Stop here and keep the changes made so far (no report, no PR)"),
                      ("discard", "Stop and discard all changes")],
                     default="retry",
                     suggestions=_error_suggestions(e),
-                    dashboard=self.dash, log=self.log,
                 )
                 if choice != "retry":
                     raise Stop(f"Stopped after an error in the {self.session.agent}.", discard=choice == "discard")
@@ -138,17 +137,16 @@ class Pipeline:
                 continue
             failed = ", ".join(f"{n} ({r.summary})" for n, r in results.items() if not r.ok or not r.has_tests)
             if round_no >= limit:
-                choice = choose(
+                choice = self.dash.decide(
                     f"Tests still fail after {round_no} fix round(s): {failed}",
                     [("more", f"Run {ROUNDS_PER_BATCH} more fix rounds"),
                      ("skip", "Skip the test report and write the QA report anyway (tests still failing)"),
                      ("stop", "Stop here and keep the changes (no reports, no PR)"),
                      ("discard", "Stop and discard all changes")],
                     # Unattended runs must not loop forever: without a terminal, move on to the report.
-                    default="more" if interactive() else "skip",
+                    default="more" if self.dash.interactive else "skip",
                     suggestions=["Check the failing output in the log; the bug may need a human decision.",
                                  "If the failure needs a service or database, the tests can't pass on this machine."],
-                    dashboard=self.dash, log=self.log,
                 )
                 if choice == "more":
                     limit += ROUNDS_PER_BATCH
