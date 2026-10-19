@@ -3,6 +3,12 @@ analyze:
   description: |
     Analyze the repository at {repo_path} (branch: {branch}).
 
+    Project map (already computed for you, so don't list files you can see here):
+    {brief}
+
+    Lessons from earlier runs on this repository:
+    {lessons}
+
     Components that will be tested:
     {components}
 
@@ -22,6 +28,8 @@ optimize:
   agent: optimizer
   description: |
     Improve the code in {repo_path} based on the Code Analyst's report below.
+    The report already names the files and lines; open those files directly
+    instead of exploring the repo again.
 
     Priority 1 (apply these): fix the bugs, mistakes and inefficiencies. Read
     each file before you edit it. Use edit_file for surgical changes and
@@ -51,6 +59,15 @@ write_tests:
   description: |
     Create and run a test suite for {repo_path}.
 
+    Project map:
+    {brief}
+
+    How to test this stack (follow it):
+    {playbook}
+
+    Lessons from earlier runs on this repository (avoid repeating these problems):
+    {lessons}
+
     Components and where their tests go:
     {components}
 
@@ -66,6 +83,12 @@ write_tests:
       when the project uses React or another UI library). Import source files
       with relative paths from the test file, for example
       '../../../frontend/src/components/Button.jsx'. Mock network calls with vi.mock.
+    - Astro and other frameworks: follow the "How to test this stack" notes above.
+    - Other component formats with no test support here (.vue, .svelte): don't
+      import them; test the plain .js/.ts modules instead.
+    - If a test fails because the test tooling can't load or parse a file (for
+      example "Failed to parse source for import analysis"), that's a problem with
+      the test, not the code: change the test, never the source.
     - Coverage: write tests for EVERY component listed above, not just one.
       For each component, cover each item in the analysis's "What to Test"
       section and every fix the Optimizer applied. For APIs, test the routes
@@ -90,12 +113,17 @@ write_tests:
 diagnose:
   agent: analyst
   description: |
-    The test suite in {repo_path} is failing (round {round}). Find the root cause
-    of every failure.
-
-    For each failing test, read the test and the code under test, then decide:
+    The test suite in {repo_path} is failing (round {round}). The harness has
+    already parsed and classified the failures and collected the relevant code
+    for you. Start from that; only open other files if it's truly not enough.
+    {warning}
+    For each failure marked UNKNOWN, decide:
     - CODE BUG: the source code is wrong (including bugs the Optimizer introduced).
-    - TEST BUG: the test is wrong (bad import, wrong expectation about correct behaviour, bad mock).
+    - TEST BUG: the test is wrong (bad import, wrong expectation about correct
+      behaviour, bad mock), or the test tooling can't load or parse a file.
+      Tooling problems are ALWAYS a TEST BUG, never a reason to change the source.
+    Failures marked TOOLING, ENVIRONMENT or TEST are already known to be TEST
+    BUGs: keep their "known fix".
 
     Never propose a fix that reintroduces a bug or security weakness the
     Optimizer removed (for example, putting back a hard-coded secret). If a
@@ -103,8 +131,14 @@ diagnose:
     lazy check at use time instead of import time, an explicit test/dev flag,
     or a safer default.
 
-    --- Failing test output ---
-    {failures}
+    --- Failures (classified by the harness) ---
+    {triage}
+
+    --- Relevant code (from the stack traces; > marks the failing line) ---
+    {context}
+
+    --- What earlier rounds already tried (don't repeat what didn't work) ---
+    {attempts}
 
     --- Changes the Optimizer has made so far ---
     {changes}
@@ -120,10 +154,14 @@ fix_code:
     earlier change caused it. Read each file before editing, and make surgical
     edits only. Don't touch '{test_root}', dependencies or lockfiles. Ignore
     TEST BUG items: the Test Engineer handles those. Never make tests pass by
-    reintroducing a bug or security weakness, such as a hard-coded secret.
-
+    reintroducing a bug or security weakness, such as a hard-coded secret, and
+    never change source code just to satisfy the test tooling.
+    {warning}
     --- Diagnosis ---
     {diagnosis}
+
+    --- Relevant code (from the stack traces) ---
+    {context}
   expected_output: |
     A Markdown table of the edits you made (File | Change | Fixes which failure),
     or "No code changes needed" if every item was a TEST BUG.
@@ -133,6 +171,9 @@ write_missing_tests:
   description: |
     These components still have NO runnable tests in {repo_path}:
     {missing}
+
+    How to test this stack:
+    {playbook}
 
     Write a proper test suite for each of them now (inside
     '{test_root}/<component>/', organized into subfolders such as unit/,
@@ -154,16 +195,47 @@ write_missing_tests:
 repair_tests:
   agent: tester
   description: |
-    Round {round}: fix every item the Code Analyst marked TEST BUG below (the
-    Optimizer has already fixed the CODE BUG items). Only edit files inside
-    '{test_root}/'. Never weaken an assertion about correct behaviour. Then
-    run all tests with run_tests and report the result.
+    Round {round}: fix the failing tests in '{test_root}/'. Items marked TEST BUG
+    (or TOOLING / ENVIRONMENT / TEST below) are yours; CODE BUG items have
+    already been fixed in the source by the Optimizer. Only edit files inside
+    '{test_root}/'. Never weaken an assertion about correct behaviour.
+    {warning}
+    How to test this stack:
+    {playbook}
 
     --- Diagnosis ---
     {diagnosis}
+
+    --- Failures (classified by the harness, with known fixes) ---
+    {triage}
+
+    --- Relevant code ---
+    {context}
+
+    --- What earlier rounds already tried ---
+    {attempts}
+
+    Then run all tests with run_tests and report the result.
   expected_output: |
     What you changed in the tests (one line per file), and the exact result of
     your final run_tests call.
+
+quarantine_tests:
+  agent: tester
+  description: |
+    These tests in {repo_path} kept failing in the same way for several rounds,
+    so they're being set aside instead of looping again. For each test below,
+    mark it as skipped (don't delete it), with a one-line reason in the code:
+    - vitest: change it(...) / test(...) to it.skip(...) / test.skip(...) and add
+      a comment above it: // QUARANTINED: <reason>
+    - pytest: add @pytest.mark.skip(reason="QUARANTINED: <reason>")
+    Don't change any other test. Then run all tests with run_tests.
+
+    --- Tests to quarantine ---
+    {triage}
+  expected_output: |
+    The tests you skipped with their reasons (one line each), and the exact
+    result of your final run_tests call.
 
 test_report:
   agent: tester
