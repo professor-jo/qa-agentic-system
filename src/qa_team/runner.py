@@ -201,7 +201,7 @@ def run_repo(text: str, branch: str | None, open_pr: bool, verbose: bool, ui, lo
                 "Don't claim a PR exists: its link is added to the run summary afterwards.")
 
         outcome = Pipeline(target.path, target.branch, components, session, ui, log, verbose,
-                           setup_summary, plan).run()
+                           setup_summary, plan, lessons_path=OUTPUT / target.path.name / "lessons.json").run()
 
         ui.start("deliver", "committing")
         summary = "; ".join(f"{n}: {r.summary}" for n, r in outcome.final_results.items())

@@ -155,6 +155,32 @@ Safety:
 whenever `site/` changes on `main`. It only explains and links to the app; the
 app itself always runs locally, with each user's own API key.
 
+## The harness: keeping agents focused
+
+`harness.py` does the bookkeeping deterministically (no LLM), so agents spend
+their steps on judgement, not on rediscovering things.
+
+| Piece | What it does |
+|---|---|
+| **Failure triage** | Parses failing pytest/vitest output into failures (test, error, `path:line`) and classifies each with a knowledge base of known error patterns: `tooling` (e.g. "Failed to parse source for import analysis"), `environment` (network, timeouts), `test` (bad import, missing export, missing fixture), or `unknown`. |
+| **Routing** | If every failure is tooling/environment/test, the round goes straight to the Test Engineer with the known fix; the Analyst and Optimizer are only used for `unknown` failures (possible code bugs), and may never change source to satisfy the test tooling. |
+| **Stuck detection** | Each round's failures get a fingerprint. Same fingerprint as last round → the next round is warned that its approach failed and is shown what was already tried. Same failures 3 rounds in a row → the loop stops and offers to **quarantine** those tests (skipped with a reason in the code and the report). |
+| **Context packs** | Fix rounds receive the failing test and the source lines from its stack trace in the prompt, so they don't re-explore the repo every round. |
+| **Project brief** | A one-time map (components, key libraries, scripts, file list with sizes) shared with every agent. |
+| **Step budgets** | Each task has a visible budget (e.g. diagnose 12, fix 18, repair 22 tool steps); tool results end with `[step 7/12]`, and reading an unchanged file twice in one task returns a short reminder. |
+| **Playbooks** | `config/playbooks/*.md`: short how-to-test notes for the detected stack (Astro, React, Vue/Svelte, Node servers, FastAPI/Flask/Django, plain Python/JS). |
+| **Lessons** | `output/<repo>/lessons.json` remembers tooling quirks and quarantined tests; the next run on that repo starts with them. |
+| **Retry cap** | An agent that errors is retried at most twice automatically, then the run stops. |
+
+## Astro projects
+
+If a JS project depends on `astro`, its tests run through Astro's own Vite setup
+(`getViteConfig`) with vitest 5 and the project's own `astro` and `vite`, which
+are linked into `agentic test/<component>/node_modules`. The Test Engineer
+renders `.astro` components and pages with Astro's container API
+(`astro/container`). Other component formats without test support (`.vue`,
+`.svelte`) are left out; only their plain JS/TS modules are tested.
+
 ## Code layout
 
 ```

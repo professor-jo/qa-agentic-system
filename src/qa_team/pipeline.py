@@ -11,11 +11,12 @@ from datetime import date
 from pathlib import Path
 
 from qa_team.agents import run_task
+from qa_team.harness import Lessons, context_pack, fingerprint, playbooks, repo_brief, triage, triage_table
 from qa_team.stack import REPORT_ROOT, TEST_ROOT, Component, TestRun, run_component_tests, run_pytest
 from qa_team.tools import Session
 
 
-ROUNDS_PER_BATCH = 3
+ROUNDS_PER_BATCH = 4   # stuck detection usually ends hopeless loops well before this
 MAX_FAILURE_CHARS = 12_000
 
 
@@ -49,11 +50,16 @@ def unique_path(path: Path) -> Path:
 
 class Pipeline:
     def __init__(self, repo: Path, branch: str, components: list[Component], session: Session,
-                 dashboard, log, verbose: bool, setup_summary: str, delivery_plan: str):
+                 dashboard, log, verbose: bool, setup_summary: str, delivery_plan: str,
+                 lessons_path: Path | None = None):
         self.repo, self.branch, self.components = repo, branch, components
         self.session, self.dash, self.log, self.verbose = session, dashboard, log, verbose
         self.setup_summary, self.delivery_plan = setup_summary, delivery_plan
         self.today = date.today().isoformat()
+        # Computed once, shared with every agent (no LLM involved).
+        self.brief = repo_brief(repo, components)
+        self.playbook = playbooks(repo, components)
+        self.lessons = Lessons(lessons_path or repo / ".agentic-lessons.json")
 
     # --- helpers --------------------------------------------------------------
     def _base_inputs(self) -> dict:
@@ -61,10 +67,13 @@ class Pipeline:
             "repo_path": str(self.repo), "repo_name": self.repo.name, "branch": self.branch,
             "components": "\n".join(f"- {c.describe()}" for c in self.components),
             "test_root": TEST_ROOT, "report_root": REPORT_ROOT, "date": self.today,
+            "brief": self.brief, "playbook": self.playbook, "lessons": self.lessons.text(),
+            "warning": "", "attempts": "(first attempt)",
         }
 
     def _task(self, stage: str, task_key: str, doing: str, **inputs) -> str:
         """Run one agent task. On an error (API outage, rate limit, ...) ask what to do."""
+        failures = 0
         while True:
             self.dash.start(stage, doing)
             try:
@@ -72,13 +81,15 @@ class Pipeline:
                 self.dash.done(stage)
                 return result
             except Exception as e:  # noqa: BLE001 - anything the LLM/tools raise
+                failures += 1
                 self.dash.fail(stage, "error")
                 choice = self.dash.decide(
                     f"The {self.session.agent} hit an error: {type(e).__name__}: {str(e)[:300]}",
                     [("retry", "Retry this step"),
                      ("stop", "Stop here and keep the changes made so far (no report, no PR)"),
                      ("discard", "Stop and discard all changes")],
-                    default="retry",
+                    # Never retry forever: after two failed retries the default becomes "stop".
+                    default="retry" if failures <= 2 else "stop",
                     suggestions=_error_suggestions(e),
                 )
                 if choice != "retry":
@@ -120,9 +131,11 @@ class Pipeline:
         tests_summary = self._task("tester", "write_tests", "writing tests", analysis=analysis, optimization=optimization)
 
         rounds: list[str] = []
+        attempts: list[str] = []
         round_no, limit, missing_attempts = 1, ROUNDS_PER_BATCH, 0
+        previous, stuck, quarantined = None, 0, False
         while True:
-            ok, results, failures = self._verify()
+            ok, results, _raw = self._verify()
             if ok:
                 break
             missing = [c for c in self.components if not results[c.name].has_tests]
@@ -135,21 +148,40 @@ class Pipeline:
                     "tester", "write_missing_tests", f"writing tests for {names}",
                     missing="\n".join(f"- {c.describe()}" for c in missing), analysis=analysis, optimization=optimization)
                 continue
+
+            failures = triage(self.repo, self.components, results)
+            self.lessons.learn(failures)
+            self.lessons.save()
+            table = triage_table(failures)
+            self.log.write(f"[triage]\n{table}\n")
+            stamp = fingerprint(failures)
+            stuck = stuck + 1 if stamp == previous else 0
+            previous = stamp
             failed = ", ".join(f"{n} ({r.summary})" for n, r in results.items() if not r.ok or not r.has_tests)
-            if round_no >= limit:
-                choice = self.dash.decide(
-                    f"Tests still fail after {round_no} fix round(s): {failed}",
-                    [("more", f"Run {ROUNDS_PER_BATCH} more fix rounds"),
-                     ("skip", "Skip the test report and write the QA report anyway (tests still failing)"),
-                     ("stop", "Stop here and keep the changes (no reports, no PR)"),
-                     ("discard", "Stop and discard all changes")],
-                    # Unattended runs must not loop forever: without a terminal, move on to the report.
-                    default="more" if self.dash.interactive else "skip",
-                    suggestions=["Check the failing output in the log; the bug may need a human decision.",
-                                 "If the failure needs a service or database, the tests can't pass on this machine."],
-                )
+
+            if stuck >= 2 or round_no >= limit:
+                reason = (f"The same {len(failures)} failure(s) came back {stuck + 1} rounds in a row, so more rounds won't help"
+                          if stuck >= 2 else f"Tests still fail after {round_no} fix round(s): {failed}")
+                options = ([] if quarantined else [("quarantine", "Quarantine the failing tests (mark them skipped with a reason) and finish")]) + [
+                    ("more", f"Run {ROUNDS_PER_BATCH} more fix rounds"),
+                    ("skip", "Skip the test report and write the QA report anyway (tests still failing)"),
+                    ("stop", "Stop here and keep the changes (no reports, no PR)"),
+                    ("discard", "Stop and discard all changes")]
+                default = "quarantine" if not quarantined else ("more" if self.dash.interactive and not stuck else "skip")
+                choice = self.dash.decide(reason, options, default=default, suggestions=[
+                    "Quarantined tests stay in the suite as skipped, with the reason written in the code and the report.",
+                    "If a failure needs a real service, database or browser, it can't pass on this machine."])
+                if choice == "quarantine":
+                    quarantined = True
+                    self._task("tester", "quarantine_tests", "quarantining tests that can't pass here", triage=table)
+                    self.lessons.quarantine([f.test for f in failures], failures[0].hint or failures[0].message)
+                    self.lessons.save()
+                    rounds.append(f"Round {round_no}: quarantined {len(failures)} test(s) that kept failing the same way:\n{table}")
+                    previous, stuck = None, 0
+                    continue
                 if choice == "more":
-                    limit += ROUNDS_PER_BATCH
+                    limit = round_no + ROUNDS_PER_BATCH
+                    stuck = 0
                 elif choice == "skip":
                     rounds.append(f"Round {round_no}: still failing ({failed}); the user chose to continue without a test report.")
                     return self._finish(analysis, optimization, results, rounds, passed=False, tests_summary=tests_summary)
@@ -157,15 +189,28 @@ class Pipeline:
                     raise Stop("Stopped with failing tests.", discard=choice == "discard")
 
             round_no += 1
-            self.dash.info = f"Round {round_no}: sending failures back ({failed})"
-            changes = "\n".join(f"- {p} ({kind})" for p, kind in self.session.source_changes.items()) or "(none)"
-            diagnosis = self._task("analyst", "diagnose", f"diagnosing failures (round {round_no})",
-                                   round=round_no, failures=failures, changes=changes)
-            fix = self._task("optimizer", "fix_code", f"fixing code (round {round_no})", round=round_no, diagnosis=diagnosis)
-            self._task("tester", "repair_tests", f"repairing tests (round {round_no})", round=round_no, diagnosis=diagnosis)
-            rounds.append(f"Round {round_no - 1} failed: {failed}. Sent back to the Code Analyst and Optimizer "
-                          f"(fix round {round_no}).\nDiagnosis:\n{diagnosis}\nCode fixes:\n{fix}")
-            optimization += f"\n\n### Fixes from round {round_no}\n{fix}"
+            context = context_pack(self.repo, failures)
+            warning = ("\n    WARNING: exactly the same failures came back after the last round. Its approach did not work."
+                       " Do something different, or say plainly that the test can't pass here.\n" if stuck else "")
+            tried = "\n".join(attempts[-3:]) or "(first attempt)"
+            shared = dict(round=round_no, triage=table, context=context, attempts=tried, warning=warning)
+            code_suspects = [f for f in failures if f.category == "unknown"]
+            if code_suspects:
+                self.dash.info = f"Round {round_no}: {len(code_suspects)} possible code bug(s), {len(failures) - len(code_suspects)} test issue(s)"
+                changes = "\n".join(f"- {p} ({kind})" for p, kind in self.session.source_changes.items()) or "(none)"
+                diagnosis = self._task("analyst", "diagnose", f"diagnosing failures (round {round_no})", changes=changes, **shared)
+                fix = self._task("optimizer", "fix_code", f"fixing code (round {round_no})", diagnosis=diagnosis, **shared)
+            else:
+                # Known test/tooling/environment problems: no need to involve the Analyst or touch the source.
+                self.dash.info = f"Round {round_no}: test & tooling issues only, straight to the Test Engineer"
+                diagnosis = "Every failure is a known TEST / TOOLING / ENVIRONMENT problem (no code change needed):\n" + table
+                fix = "No code changes needed (no failure points to a code bug)."
+            repair = self._task("tester", "repair_tests", f"repairing tests (round {round_no})", diagnosis=diagnosis, **shared)
+            cats = ", ".join(sorted({f.category for f in failures}))
+            attempts.append(f"- Round {round_no} ({len(failures)} failure(s): {cats}): {' '.join(repair.split())[:280]}")
+            rounds.append(f"Round {round_no - 1} failed: {failed}.\nTriage:\n{table}\nDiagnosis:\n{diagnosis}\nCode fixes:\n{fix}")
+            if code_suspects:
+                optimization += f"\n\n### Fixes from round {round_no}\n{fix}"
 
         rounds = rounds or ["All tests passed on the first run."]
         return self._finish(analysis, optimization, results, rounds, passed=True, tests_summary=tests_summary)

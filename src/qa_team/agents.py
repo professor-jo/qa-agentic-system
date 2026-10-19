@@ -33,6 +33,11 @@ PRICES = {
     "gpt-5-mini": (0.25, 0.025, 2.00),
 }
 MAX_ITER = {"analyst": 30, "optimizer": 40, "tester": 50, "reporter": 5}
+# Tool-step budgets per task, shown to the agent. Fix rounds get tight budgets: the harness
+# already hands them the failing tests and the relevant source lines.
+TASK_STEPS = {"analyze": 30, "optimize": 40, "write_tests": 50, "write_missing_tests": 30,
+              "diagnose": 12, "fix_code": 18, "repair_tests": 22, "quarantine_tests": 12,
+              "test_report": 3, "qa_report": 3}
 LABELS = {"analyst": "Code Analyst", "optimizer": "Optimizer", "tester": "Test Engineer", "reporter": "QA Reporter"}
 
 
@@ -115,10 +120,12 @@ def run_task(task_key: str, session: Session, inputs: dict, log, verbose: bool =
     values = _Blank({k: str(v) for k, v in inputs.items()})
 
     session.agent = LABELS[agent_key]
+    steps = TASK_STEPS.get(task_key, MAX_ITER[agent_key])
+    session.begin_task(steps)
     session.activity("thinking")
     agent = Agent(
         role=agent_cfg["role"], goal=agent_cfg["goal"].strip(), backstory=agent_cfg["backstory"].strip(),
-        tools=_tools_for(agent_key, session), llm=build_llm(), max_iter=MAX_ITER[agent_key],
+        tools=_tools_for(agent_key, session), llm=build_llm(), max_iter=steps + 2,
         allow_delegation=False, verbose=verbose,
     )
     task = Task(

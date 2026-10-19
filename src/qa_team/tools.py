@@ -8,6 +8,7 @@ lockfiles or the report folder.
 """
 
 import fnmatch
+import functools
 import os
 import re
 from dataclasses import dataclass, field
@@ -36,6 +37,26 @@ class Session:
     test_files: set[str] = field(default_factory=set)
     test_runs: int = 0
     usage: dict[str, int] = field(default_factory=lambda: {"prompt": 0, "cached": 0, "completion": 0})
+    task_steps: int = 0
+    task_limit: int = 0
+    read_cache: dict = field(default_factory=dict)
+
+    def begin_task(self, limit: int) -> None:
+        """Each agent task gets a visible step budget and a fresh read cache."""
+        self.task_steps, self.task_limit = 0, limit
+        self.read_cache.clear()
+
+    def step_note(self) -> str:
+        """Appended to every tool result, so the agent sees its budget shrinking."""
+        self.task_steps += 1
+        if not self.task_limit:
+            return ""
+        left = self.task_limit - self.task_steps
+        if left <= 0:
+            return "\n[step budget used up: stop using tools and give your final answer now]"
+        if left <= 3:
+            return f"\n[step {self.task_steps}/{self.task_limit}: only {left} left, wrap up and give your final answer]"
+        return f"\n[step {self.task_steps}/{self.task_limit}]"
 
     def activity(self, what: str) -> None:
         self.on_activity(self.agent or "agent", what)
@@ -70,6 +91,17 @@ def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
 
 class SessionTool(BaseTool):
     session: Any = Field(..., exclude=True)
+
+    def __init_subclass__(cls, **kwargs):
+        """Wrap every tool's _run so its result ends with the step-budget note."""
+        super().__init_subclass__(**kwargs)
+        if "_run" in cls.__dict__:
+            original = cls.__dict__["_run"]
+
+            @functools.wraps(original)
+            def counted(self, *args, **kw):
+                return f"{original(self, *args, **kw)}{self.session.step_note()}"
+            cls._run = counted
 
 
 # --- read-only ------------------------------------------------------------------
@@ -117,6 +149,12 @@ class ReadFileTool(SessionTool):
             lines = file.read_text(errors="replace").splitlines()
         except (ValueError, OSError) as e:
             return f"Error reading '{path}': {e}"
+        key = (s.rel(file), start_line, end_line)
+        stamp = file.stat().st_mtime_ns
+        if s.read_cache.get(key) == stamp:
+            return (f"You already read {path} (same lines) earlier in this task and it hasn't changed. "
+                    "Use what you have instead of reading it again.")
+        s.read_cache[key] = stamp
         s.activity(f"reading {path}")
         end = end_line or len(lines)
         numbered = "\n".join(f"{i:>5}  {lines[i - 1]}" for i in range(max(start_line, 1), min(end, len(lines)) + 1))

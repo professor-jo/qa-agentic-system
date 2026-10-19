@@ -10,7 +10,7 @@ Everything they change is put on a separate branch with a pull request, so you
 can review it before anything reaches your main branch.
 
 It works with **Python** and **JavaScript / TypeScript** projects, including
-React apps, and with projects that have both, such as a Python backend and a
+React and Astro sites, and with projects that have both, such as a Python backend and a
 React frontend.
 
 ---
