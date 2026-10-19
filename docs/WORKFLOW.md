@@ -148,6 +148,13 @@ Safety:
 - **One run at a time.** Each run is saved to `output/<repo>/<time>/result.json`,
   which is what the history list shows.
 
+## Landing page
+
+`site/` is a static page published to GitHub Pages
+(https://professor-jo.github.io/qa-agentic-system/) by `.github/workflows/pages.yml`
+whenever `site/` changes on `main`. It only explains and links to the app; the
+app itself always runs locally, with each user's own API key.
+
 ## Code layout
 
 ```

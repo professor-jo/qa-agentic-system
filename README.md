@@ -2,6 +2,8 @@
 
 **An AI QA team that checks your code, fixes it, tests it, and writes up what it did.**
 
+🌐 **Website:** [professor-jo.github.io/qa-agentic-system](https://professor-jo.github.io/qa-agentic-system/)
+
 Point it at a GitHub repository or a folder on your computer. Four AI agents
 read the code, fix the bugs they find, write and run tests, and write a report.
 Everything they change is put on a separate branch with a pull request, so you
@@ -109,8 +111,9 @@ pip install -e .
 qa_team
 ```
 
-**3. Paste your OpenAI API key when asked.** You only do this once; it can be
-saved for next time. Get a key at
+**3. Add your own OpenAI API key.** The app runs on your key, not the
+developer's. In the web app, the first screen shows a **Step 1** box for it; in
+the terminal you're asked once. It's saved only on your computer. Get a key at
 [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
 
 **4. Tell it which project to check.** Type a folder path or a GitHub URL, or

@@ -217,6 +217,20 @@ def _find_dirs(name: str, max_depth: int = 5, time_limit: float = 4.0) -> list[P
     return found
 
 
+def _verify_key(key: str) -> str | None:
+    """Ask OpenAI whether the key works (listing models is free). Returns a problem, or None."""
+    import httpx
+    try:
+        r = httpx.get("https://api.openai.com/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=15)
+    except httpx.HTTPError:
+        return "Couldn't reach OpenAI to check the key. Check your internet connection and try again."
+    if r.status_code == 401:
+        return "OpenAI rejected that key. Copy it again from platform.openai.com/api-keys."
+    if r.status_code == 403:
+        return "That key doesn't have access to the models. Check its permissions in your OpenAI dashboard."
+    return None if r.is_success else f"OpenAI couldn't check the key right now (HTTP {r.status_code}). Try again."
+
+
 def _env_status() -> dict:
     key = os.getenv("OPENAI_API_KEY", "")
     gh_user = ""
@@ -273,6 +287,8 @@ def create_app(port: int) -> FastAPI:
         if key := (body.get("api_key") or "").strip():
             if not key.startswith("sk-"):
                 raise HTTPException(400, "That doesn't look like an OpenAI API key (it should start with sk-).")
+            if problem := await asyncio.to_thread(_verify_key, key):
+                raise HTTPException(400, problem)
             values["OPENAI_API_KEY"] = key
         if model := (body.get("model") or "").strip():
             values["MODEL"] = model
@@ -371,7 +387,7 @@ def create_app(port: int) -> FastAPI:
         if not text:
             raise HTTPException(400, "Choose a repository first.")
         if not os.getenv("OPENAI_API_KEY"):
-            raise HTTPException(400, "Add your OpenAI API key in Settings first.")
+            raise HTTPException(400, "Add your OpenAI API key first (Step 1 at the top of the page).")
         with RUN_LOCK:
             if _active():
                 raise HTTPException(409, "A run is already in progress. Wait for it to finish.")

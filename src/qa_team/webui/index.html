@@ -79,6 +79,20 @@ main { max-width: 1100px; margin: 0 auto; padding: 26px 22px 80px; position: rel
 .ready-row .toggle { padding: 0; color: var(--muted); }
 .ready-row .grow { flex: 1; }
 
+/* first-run setup: the user's own API key */
+.setup { border: 1px solid var(--warn); border-radius: 8px; padding: 16px 18px; margin-bottom: 18px;
+  background: rgba(250, 204, 21, .04); box-shadow: 0 0 18px rgba(250, 204, 21, .12); }
+.setup p { margin: 8px 0 14px; color: var(--text); font-size: 13px; }
+.setup code { color: var(--warn); }
+.setup .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+.setup-title { font-weight: 700; color: var(--warn); display: flex; gap: 10px; align-items: center; }
+.setup-title.next { color: var(--muted); margin: 18px 0 -6px; font-weight: 600; }
+.setup .step { font-size: 11px; letter-spacing: .14em; border: 1px solid currentColor; border-radius: 4px; padding: 1px 6px; }
+#key-form .prompt-sign { color: var(--warn); }
+#run-inputs.locked { opacity: .35; pointer-events: none; filter: grayscale(.4); }
+.locked-note { color: var(--warn); font-size: 12px; margin-top: 10px; text-align: center; }
+#run-inputs.locked .locked-note { opacity: 1; }
+
 /* the crew: standing on top of the terminal window */
 .crew { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 0 36px; align-items: end;
   margin-bottom: -1px; position: relative; z-index: 2; }
@@ -259,6 +273,20 @@ select.field option { background: #04140c; }
         <div class="cmd">$ <b>qa_team</b> --help</div>
         <h1>Need a Code Proofread?</h1>
         <p class="sub">Paste a GitHub link or drop a project folder. Four AI agents review it, fix bugs and test it.</p>
+        <div class="setup hidden" id="setup">
+          <div class="setup-title"><span class="step">STEP 1</span> Add your OpenAI API key</div>
+          <p>The agents use <b>your own</b> OpenAI key, not the developer's. It's saved only on this computer
+            (in the local <code>.env</code> file) and never uploaded. Runs are billed to your OpenAI account, and each
+            run shows its cost at the end.</p>
+          <form class="paste" id="key-form">
+            <span class="prompt-sign">key</span>
+            <input class="field" id="setup-key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false">
+            <button class="btn primary" type="submit">SAVE KEY</button>
+          </form>
+          <div class="hint">No key yet? Create one at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a> (OpenAI asks for a payment method).</div>
+          <div class="setup-title next"><span class="step">STEP 2</span> Choose a project</div>
+        </div>
+        <div id="run-inputs">
         <form class="paste" id="paste-form">
           <span class="prompt-sign">❯</span>
           <input class="field" id="src-input" placeholder="https://github.com/you/your-repo" autocomplete="off" spellcheck="false">
@@ -267,6 +295,8 @@ select.field option { background: #04140c; }
         <div class="or">or</div>
         <div class="drop" id="drop-zone" tabindex="0" role="button" aria-label="Drop a project folder, or click to browse">
           [ <b>drop a project folder</b> ] or click to browse
+        </div>
+        <div class="locked-note hidden" id="locked-note">🔒 Add your API key in Step 1 to unlock this.</div>
         </div>
         <div class="ready hidden" id="ready">
           <div class="ready-name"><span>✓</span><span id="ready-name"></span></div>
@@ -404,7 +434,10 @@ let status = {};
 async function loadStatus() {
   status = await api("/api/status");
   $("model-chip").textContent = status.model + (status.reasoning_effort ? ` · ${status.reasoning_effort}` : "");
-  if (!status.has_key) openSettings(true);
+  const needsKey = !status.has_key;
+  $("setup").classList.toggle("hidden", !needsKey);
+  $("run-inputs").classList.toggle("locked", needsKey);
+  $("locked-note").classList.toggle("hidden", !needsKey);
   return status;
 }
 function openSettings(firstTime = false) {
@@ -519,6 +552,18 @@ $("paste-form").addEventListener("submit", (e) => {
   const value = $("src-input").value.trim();
   value ? checkSource(value) : toast("Paste a GitHub link or a folder path first.");
 });
+$("key-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("setup-key"), button = e.target.querySelector("button");
+  if (!input.value.trim()) return toast("Paste your OpenAI API key first.");
+  button.disabled = true; button.textContent = "CHECKING…";
+  try {
+    await api("/api/settings", { method: "POST", body: JSON.stringify({ api_key: input.value.trim() }) });
+    input.value = ""; toast("API key saved on this computer. You're ready to go.", "ok");
+    await loadStatus();
+  } catch (err) { toast(err.message); }
+  finally { button.disabled = false; button.textContent = "SAVE KEY"; }
+});
 $("clear-btn").addEventListener("click", () => { clearSource(); $("src-input").value = ""; $("src-input").focus(); });
 
 // Dropping a folder: browsers only reveal its name and contents, so the server finds it by those.
@@ -566,7 +611,7 @@ $("start-btn").addEventListener("click", async () => {
     const { id } = await api("/api/runs", { method: "POST", body: JSON.stringify({
       source: state.source, branch: $("branch-select").value, open_pr: $("open-pr").checked }) });
     openRun(id, true);
-  } catch (e) { toast(e.message); $("start-btn").disabled = false; if (/API key/.test(e.message)) openSettings(true); }
+  } catch (e) { toast(e.message); $("start-btn").disabled = false; if (/API key/.test(e.message)) loadStatus(); }
 });
 
 async function loadHistory() {
